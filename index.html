@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pose Matcher</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            background-color: #f0f0f0;
+        }
+
+        #container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            /* height: 100vh; */
+            background-color: #fff;
+            border-radius: 20px;
+            box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.2);
+            margin: 20px;
+            padding: 3%;
+        }
+
+        #text-display {
+            font-size: 36px;
+            margin-bottom: 20px;
+        }
+
+        #buttons {
+            display: flex;
+            gap: 20px;
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 18px;
+            cursor: pointer;
+            background-color: #007BFF;
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+        }
+
+        #info-container {
+            width: 100%;
+            padding: 20px;
+            text-align: left;
+            background-color: #fff;
+            border-radius: 20px;
+            box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.2);
+            margin: 20px;
+        }
+
+        #info-container h2 {
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+
+        #info-container p {
+            font-size: 18px;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="info-container">
+        <h2 style="margin: auto; text-align: center;">Pose Matching</h2>
+        <!-- Add your model information here -->
+    </div>
+    <div><canvas id="canvas"></canvas></div>
+    <div id="label-container"></div>
+    </div>
+    <div id="container">
+        <div id="text-display">Click "Start" to begin</div>
+        <div id="buttons">
+            <button id="start-button">Start</button>
+            <button id="stop-button" disabled>Stop</button>
+        </div>
+        <div id="counter">Matches: 0</div>
+    </div>
+    <div id="teach">
+
+        <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
+        <script
+            src="https://cdn.jsdelivr.net/npm/@teachablemachine/pose@0.8/dist/teachablemachine-pose.min.js"></script>
+        <script type="text/javascript">
+            const URL = "https://teachablemachine.withgoogle.com/models/gxeKD3fyis/";
+            let model, webcam, ctx, labelContainer, maxPredictions;
+            let intervalId;
+            let matchCounter = 0; // Counter for matches
+            let isMatchCounted = false; // Flag to track if a match has been counted
+
+            const words = ['up', 'down', 'left', 'right', 'center'];
+            const textDisplay = document.getElementById('text-display');
+            const startButton = document.getElementById('start-button');
+            const stopButton = document.getElementById('stop-button');
+            const counterDisplay = document.getElementById('counter');
+
+            async function init() {
+                const modelURL = URL + "model.json";
+                const metadataURL = URL + "metadata.json";
+
+                model = await tmPose.load(modelURL, metadataURL);
+                maxPredictions = model.getTotalClasses();
+
+                const size = 200;
+                const flip = true;
+                webcam = new tmPose.Webcam(size, size, flip);
+                await webcam.setup();
+                await webcam.play();
+                window.requestAnimationFrame(loop);
+
+                const canvas = document.getElementById("canvas");
+                canvas.width = size; canvas.height = size;
+                ctx = canvas.getContext("2d");
+                labelContainer = document.getElementById("label-container");
+                for (let i = 0; i < maxPredictions; i++) {
+                    labelContainer.appendChild(document.createElement("div"));
+                }
+            }
+
+            async function loop(timestamp) {
+                webcam.update();
+                await predict();
+                window.requestAnimationFrame(loop);
+            }
+
+            async function predict() {
+                const { pose, posenetOutput } = await model.estimatePose(webcam.canvas);
+                const prediction = await model.predict(posenetOutput);
+
+                // Store the current displayed text
+                const currentText = textDisplay.textContent.toLowerCase();
+
+                for (let i = 0; i < maxPredictions; i++) {
+                    const classPrediction =
+                        prediction[i].className.toLowerCase() + ": " + prediction[i].probability.toFixed(2);
+
+                    // Compare currentText with the predicted class
+                    if (currentText === prediction[i].className.toLowerCase() && prediction[i].probability.toFixed(2) == 1) {
+                        if (!isMatchCounted) {
+                            matchCounter++; // Increment the match counter
+                            counterDisplay.textContent = `Matches: ${matchCounter}`;
+                            isMatchCounted = true; // Set the flag to true to avoid multiple counts
+                        }
+                        document.body.style.backgroundColor = 'green'; // Change background color to green
+                        // textDisplay.textContent = 'Click "Start" to begin';
+                        labelContainer.childNodes[i].innerHTML = "";
+                        break; // Exit the loop when a match is found
+                    }
+                }
+
+                drawPose(pose);
+            }
+
+            function startTextRotation() {
+                startButton.disabled = true;
+                stopButton.disabled = false;
+                document.body.style.backgroundColor = '#f0f0f0'; // Reset background color
+                isMatchCounted = false; // Reset the match count flag
+
+                intervalId = setInterval(() => {
+                    const randomIndex = Math.floor(Math.random() * words.length);
+                    textDisplay.textContent = words[randomIndex];
+                    isMatchCounted = false;
+                    document.body.style.backgroundColor = 'red';
+                }, 2000);
+            }
+
+            function drawPose(pose) {
+                if (webcam.canvas) {
+                    ctx.drawImage(webcam.canvas, 0, 0);
+                    if (pose) {
+                        const minPartConfidence = 0.5;
+                        tmPose.drawKeypoints(pose.keypoints, minPartConfidence, ctx);
+                        tmPose.drawSkeleton(pose.keypoints, minPartConfidence, ctx);
+                    }
+                }
+            }
+
+            function stopTextRotation() {
+                clearInterval(intervalId);
+                startButton.disabled = false;
+                stopButton.disabled = true;
+                textDisplay.textContent = 'Click "Start" to begin';
+            }
+
+            startButton.addEventListener('click', startTextRotation);
+            stopButton.addEventListener('click', stopTextRotation);
+
+            // Initialize the application
+            init();
+        </script>
+</body>
+
+</html>
